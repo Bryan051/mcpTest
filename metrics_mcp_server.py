@@ -1,4 +1,3 @@
-# metrics_mcp_server.py
 from __future__ import annotations
 
 import os
@@ -9,16 +8,22 @@ from psycopg2.extras import RealDictCursor
 from mcp.server.fastmcp import FastMCP
 
 
-# ---- DB 설정: 환경변수에서 읽기 ----
+# ============================================================
+# 1. DB 연결 유틸
+# ============================================================
 
-DB_HOST = os.getenv("DB_HOST", "192.168.1.69")  # cp-node IP
-DB_PORT = int(os.getenv("DB_PORT", "30432"))   # postgres-nodeport
+DB_HOST = os.getenv("DB_HOST", "192.168.1.69")   # cp-node IP
+DB_PORT = int(os.getenv("DB_PORT", "30432"))     # postgres-nodeport
 DB_NAME = os.getenv("DB_NAME", "postgresdb")
 DB_USER = os.getenv("DB_USER", "test")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "test")
 
 
 def get_conn():
+    """
+    PostgreSQL 커넥션을 하나 생성해서 반환합니다.
+    - RealDictCursor 덕분에 row를 dict처럼 접근 가능 (row["col"])
+    """
     return psycopg2.connect(
         host=DB_HOST,
         port=DB_PORT,
@@ -29,15 +34,27 @@ def get_conn():
     )
 
 
+# ============================================================
+# 2. MCP 서버 런타임 생성
+# ============================================================
+
+# FastMCP = MCP 서버 런타임
+# "metrics-mcp"가 Host/LLM 쪽에서 보게 될 MCP 서버 이름
 mcp = FastMCP("metrics-mcp")
 
 
-# ---- Tool 1: 서비스별 TPS/지연 요약 ----
+# ============================================================
+# 3. MCP Tools 정의
+#    - @mcp.tool() 로 등록된 모든 함수가
+#      tools/list 에서 보이는 도구가 됨
+#    - 파라미터/리턴 타입 → 자동으로 JSON Schema 생성
+# ============================================================
+
 
 @mcp.tool()
 def get_metrics_summary(
     service_name: Optional[str] = None,
-    minutes: int = 10
+    minutes: int = 10,
 ) -> List[Dict[str, Any]]:
     """
     최근 N분 동안 서비스별 평균 TPS, 최대 TPS, 평균 에러율, 평균 P95 지연(ms)을 조회합니다.
@@ -46,23 +63,6 @@ def get_metrics_summary(
         * 지정하면: 해당 서비스만 조회 (결과는 길이 0 또는 1인 리스트)
         * 지정하지 않으면: 전체 서비스에 대해 GROUP BY로 집계
     - minutes: 몇 분 동안의 데이터를 집계할지 (기본 10분)
-
-    반환 예시 (service_name 미지정 시):
-
-    [
-      {
-        "service_name": "order-api",
-        "minutes": 10,
-        "avg_tps": ...,
-        "max_tps": ...,
-        "avg_error_rate": ...,
-        "avg_latency_p95": ...
-      },
-      {
-        "service_name": "quote-stream",
-        ...
-      }
-    ]
     """
     conn = get_conn()
     cur = conn.cursor()
@@ -108,23 +108,18 @@ def get_metrics_summary(
             }
         ]
 
-    results: List[Dict[str, Any]] = []
-    for row in rows:
-        results.append(
-            {
-                "service_name": row["service_name"],
-                "minutes": minutes,
-                "avg_tps": row["avg_tps"],
-                "max_tps": row["max_tps"],
-                "avg_error_rate": row["avg_error_rate"],
-                "avg_latency_p95": row["avg_latency_p95"],
-            }
-        )
+    return [
+        {
+            "service_name": row["service_name"],
+            "minutes": minutes,
+            "avg_tps": row["avg_tps"],
+            "max_tps": row["max_tps"],
+            "avg_error_rate": row["avg_error_rate"],
+            "avg_latency_p95": row["avg_latency_p95"],
+        }
+        for row in rows
+    ]
 
-    return results
-
-
-# ---- Tool 2: 이벤트/에러 로그 검색 ----
 
 @mcp.tool()
 def search_event_logs(
@@ -170,29 +165,22 @@ def search_event_logs(
     cur.close()
     conn.close()
 
-    results: List[Dict[str, Any]] = []
-    for r in rows:
-        results.append(
-            {
-                "service_name": r["service_name"],
-                "timestamp": r["log_ts"].isoformat(),
-                "level": r["level"],
-                "code": r["code"],
-                "message": r["message"],
-            }
-        )
+    return [
+        {
+            "service_name": r["service_name"],
+            "timestamp": r["log_ts"].isoformat(),
+            "level": r["level"],
+            "code": r["code"],
+            "message": r["message"],
+        }
+        for r in rows
+    ]
 
-    return results
-
-
-# ---- Tool 3: 특정 trace_id의 hop 경로 조회 ----
 
 @mcp.tool()
 def get_hop_trace(trace_id: str) -> List[Dict[str, Any]]:
     """
     hop_trace 테이블에서 특정 trace_id의 hop 경로를 순서대로 조회합니다.
-
-    - trace_id: 트랜잭션/요청 단위의 trace 식별자
     """
     conn = get_conn()
     cur = conn.cursor()
@@ -223,14 +211,10 @@ def get_hop_trace(trace_id: str) -> List[Dict[str, Any]]:
     ]
 
 
-# ---- Tool 4: 모든 hop_trace 조회 ----
-
 @mcp.tool()
 def get_all_hop_traces(limit: int = 100) -> List[Dict[str, Any]]:
     """
     hop_trace 테이블의 모든 hop 경로를 조회합니다. 양이 많을 수 있어 개수 제한이 있습니다.
-
-    - limit: 최대 결과 개수 (기본 100)
     """
     conn = get_conn()
     cur = conn.cursor()
@@ -261,6 +245,12 @@ def get_all_hop_traces(limit: int = 100) -> List[Dict[str, Any]]:
     ]
 
 
+# ============================================================
+# 4. MCP 서버 실행 엔트리포인트
+# ============================================================
+
 if __name__ == "__main__":
     # stdio 기반 MCP 서버 실행
+    # → Host(Gemini CLI, 나중엔 우리 Gateway)가
+    #    이 프로세스를 띄우고 stdin/stdout으로 JSON-RPC 통신하게 됨.
     mcp.run(transport="stdio")
