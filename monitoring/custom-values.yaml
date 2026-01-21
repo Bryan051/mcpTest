@@ -1,0 +1,18 @@
+grafana:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - grafana.host
+    path: /
+
+prometheus:
+  prometheusSpec:
+    retention: 10d
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
