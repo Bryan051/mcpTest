@@ -8,11 +8,11 @@ grafana:
 
 prometheus:
   prometheusSpec:
-    retention: 10d
+    retention: 2d
     storageSpec:
       volumeClaimTemplate:
         spec:
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
-              storage: 10Gi
+              storage: 500Mi
