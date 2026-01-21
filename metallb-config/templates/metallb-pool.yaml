@@ -1,0 +1,15 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: {{ .Values.ipPool.name }}
+spec:
+  addresses:
+{{ toYaml .Values.ipPool.addresses | indent 4 }}
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: {{ .Values.advertisement.name }}
+spec:
+  ipAddressPools:
+    - {{ .Values.ipPool.name }}

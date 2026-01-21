@@ -1,0 +1,7 @@
+ipPool:
+  name: first-pool
+  addresses:
+    - 172.24.178.240-172.24.178.250
+
+advertisement:
+  name: l2-adv

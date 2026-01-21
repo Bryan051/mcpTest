@@ -1,0 +1,16 @@
+image:
+  repository: postgres
+  tag: "16"
+  pullPolicy: IfNotPresent
+
+db:
+  name: postgresdb
+  user: test
+  password: test
+
+service:
+  nodePort: 30432
+  lbPort: 5432
+
+persistence:
+  hostPath: /data/postgres-data
